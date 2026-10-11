@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Table Quest</title>
+<script>
+/* ============================================================
+   TEACHER SETUP: paste your Google Apps Script web-app URL here.
+   Leave it empty ("") to play without saving to the spreadsheet.
+   ============================================================ */
+var SHEET_URL = "";
+
+/* Classes and divisions shown in the login dropdowns – edit these lists to match your school. */
+var CLASSES = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
+var DIVISIONS = "ABCDEFGHIJKLMNOPQ".split("");
+var SETUP_OK = true;
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: sticky score bar → one stage card at a time (login → starter → main → plenary → results).
+   One bright classroom look for projectors, so every colour is set explicitly. */
+:root {
+  color-scheme: light;
+  --bg: #F1F6F5; --paper: #FFFFFF; --ink: #102229; --muted: #55676C; --line: #D5E1DE;
+  --night: #0C3A45; --dusk: #12596A; --sand: #F4DFB4; --sun: #F5A623;
+  --t1: #138A9E; --t1-soft: #DDF2F5;
+  --t2: #E2574C; --t2-soft: #FCE4E1;
+  --t3: #D98A0B; --t3-soft: #FCEFD6;
+  --t4: #1E9A5F; --t4-soft: #DBF3E6;
+  --code-bg: #10212A; --code-fg: #DCE8E5; --code-dim: #6E8790; --code-new: #FFC857;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-code: "JetBrains Mono", Consolas, "Courier New", monospace;
+  --tc: var(--t1); --tc-soft: var(--t1-soft);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.5; min-height: 100vh; }
+code, kbd { font-family: var(--font-code); font-size: .88em; background: var(--tc-soft); color: var(--ink); padding: 1px 6px; border-radius: 5px; }
+kbd { background: #FFF4DA; border: 1px solid var(--t3); border-bottom-width: 3px; font-weight: 600; }
+button { font: inherit; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 48px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.wrap > * { min-width: 0; }
+
+/* ---------- score bar ---------- */
+.bar { position: sticky; top: 0; z-index: 10; background: var(--night); color: #FFFFFF; box-shadow: 0 4px 16px rgba(12,58,69,.25); }
+.bar-in { max-width: 1180px; margin: 0 auto; padding: 10px 20px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.logo { font-family: var(--font-display); font-weight: 800; font-size: 22px; display: flex; align-items: center; gap: 8px; }
+.logo span { font-family: var(--font-code); font-size: 13px; background: var(--sun); color: var(--night); padding: 2px 8px; border-radius: 6px; }
+.who { color: #CFE6E6; font-size: 14px; }
+.who b { color: #FFFFFF; }
+.stages { display: flex; gap: 6px; margin-left: auto; flex-wrap: wrap; }
+.stages span { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,.1); color: #9FC3C6; }
+.stages span.on { background: var(--sun); color: var(--night); }
+.stages span.done { background: rgba(255,255,255,.22); color: #FFFFFF; }
+.stages span.done::before { content: "✓ "; }
+.points { position: relative; display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 4px 14px 4px 6px; }
+.points .coin { width: 28px; height: 28px; border-radius: 50%; background: var(--sun); display: grid; place-items: center; color: var(--night); font-weight: 800; }
+.points b { font-family: var(--font-display); font-size: 22px; font-variant-numeric: tabular-nums; min-width: 2.5ch; }
+.points small { color: #9FC3C6; }
+.fly { position: absolute; right: 8px; top: -4px; font-weight: 800; color: var(--sun); pointer-events: none; font-family: var(--font-display); font-size: 20px; }
+
+/* ---------- shared ---------- */
+.stage-head { display: flex; align-items: center; gap: 16px; background: var(--tc); color: #FFFFFF; border-radius: 22px; padding: 18px 22px; position: relative; overflow: hidden; }
+.stage-head::after { content: ""; position: absolute; right: -40px; top: -40px; width: 170px; height: 170px; border-radius: 50%; border: 26px solid rgba(255,255,255,.14); }
+.stage-head .big { font-family: var(--font-display); font-weight: 800; font-size: 54px; line-height: .8; }
+.stage-head .lbl { font-family: var(--font-code); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+.stage-head h2 { font-family: var(--font-display); font-weight: 800; font-size: clamp(22px, 3vw, 30px); margin: 2px 0 0; line-height: 1.1; text-wrap: balance; }
+.stage-head p { margin: 4px 0 0; opacity: .92; max-width: 60ch; }
+.card { background: var(--paper); border: 2px solid var(--line); border-radius: 22px; padding: 20px 22px; min-width: 0; }
+.card h3 { font-family: var(--font-display); font-weight: 800; font-size: 20px; margin: 0 0 10px; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 880px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.btn { font-weight: 700; font-size: 16px; border-radius: 14px; padding: 12px 22px; cursor: pointer; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); }
+.btn:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+.btn.primary { background: var(--tc); border-color: var(--tc); color: #FFFFFF; box-shadow: 0 4px 0 rgba(16,34,41,.25); }
+.btn.primary:active { transform: translateY(2px); box-shadow: 0 2px 0 rgba(16,34,41,.25); }
+.btn.ghost { border-color: var(--line); color: var(--muted); font-weight: 400; font-size: 15px; }
+.btn:disabled { background: var(--line); border-color: var(--line); color: var(--muted); box-shadow: none; cursor: not-allowed; }
+.actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.note { font-size: 14px; color: var(--muted); margin: 10px 0 0; }
+.msg { border-radius: 14px; padding: 10px 14px; font-weight: 700; margin-top: 12px; }
+.msg.good { background: var(--t4-soft); color: #11603A; border: 2px solid var(--t4); }
+.msg.bad { background: var(--t2-soft); color: #9A2C23; border: 2px solid var(--t2); }
+.msg.info { background: var(--t3-soft); color: #7A4E05; border: 2px solid var(--t3); }
+
+/* ---------- login ---------- */
+.hero { position: relative; overflow: hidden; border-radius: 26px; background: linear-gradient(180deg, var(--night) 0%, var(--dusk) 70%, #2C7C82 100%); color: #FFFFFF; padding: 32px 32px 150px; }
+.hero h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(40px, 8vw, 76px); line-height: .95; margin: 6px 0 10px; }
+.hero h1 span { font-family: var(--font-code); font-size: .38em; font-weight: 600; background: var(--sun); color: var(--night); padding: 4px 10px; border-radius: 8px; vertical-align: middle; position: relative; top: -.2em; }
+.eyebrow { font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; color: var(--sand); }
+.hero p { color: #CFE6E6; font-size: 18px; max-width: 48ch; margin: 0; }
+.skyline { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 150px; }
+.login { position: relative; z-index: 2; margin-top: -110px; margin-inline: auto; width: min(560px, 100%); background: var(--paper); border-radius: 22px; padding: 24px; box-shadow: 0 12px 30px rgba(12,58,69,.2); display: grid; gap: 14px; }
+.login h2 { font-family: var(--font-display); font-weight: 800; margin: 0; font-size: 24px; }
+.field { display: grid; gap: 6px; }
+.field label { font-weight: 700; font-size: 14px; }
+.field input, .field select { font: inherit; font-size: 17px; padding: 12px 14px; border: 2px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); width: 100%; }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.field select { appearance: auto; cursor: pointer; }
+.map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.map div { border-radius: 14px; padding: 10px 12px; font-size: 14px; }
+.map b { display: block; font-family: var(--font-display); font-size: 16px; }
+@media (max-width: 520px) { .map { grid-template-columns: minmax(0, 1fr); } .hero { padding: 24px 20px 130px; } }
+
+/* ---------- starter: animated table ---------- */
+.demo-stage { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 880px) { .demo-stage { grid-template-columns: minmax(0, 1fr); } }
+.frame { position: relative; padding: 18px 18px 18px 64px; border-radius: 16px; border: 3px dashed transparent; transition: border-color .4s, background .4s; cursor: default; }
+.frame.show { border-color: var(--t1); background: var(--t1-soft); }
+.frame.target { cursor: pointer; }
+table.demo { border-collapse: collapse; width: 100%; font-size: 16px; background: #FFFFFF; }
+table.demo caption { font-weight: 700; padding: 6px; border-radius: 8px; transition: opacity .4s, transform .4s, background .4s; }
+table.demo th, table.demo td { border: 2px solid #33464D; padding: 10px 12px; text-align: left; transition: opacity .4s, transform .4s, background .4s, box-shadow .3s; }
+table.demo th { text-align: center; }
+table.demo tr { position: relative; }
+.hide { opacity: 0; transform: translateY(8px); }
+.glow-cap { background: var(--t3-soft); }
+.glow-th { background: var(--t2-soft) !important; }
+.glow-td { background: var(--t4-soft) !important; }
+.rowtab { position: absolute; left: 6px; width: 50px; border-radius: 10px; border: 2px solid var(--t3); background: var(--t3-soft); color: #7A4E05; font-family: var(--font-code); font-size: 12px; font-weight: 600; display: grid; place-items: center; transition: opacity .4s, transform .4s; cursor: default; padding: 0; }
+.rowtab.target { cursor: pointer; }
+.tag-chip { position: absolute; font-family: var(--font-code); font-size: 13px; font-weight: 600; color: #FFFFFF; padding: 3px 9px; border-radius: 8px; white-space: nowrap; transition: opacity .4s, transform .4s; pointer-events: none; }
+.legend { display: grid; gap: 8px; }
+.legend div { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 10px; border-radius: 12px; border: 2px solid var(--line); transition: background .3s, border-color .3s, opacity .3s; opacity: .45; }
+.legend div.lit { opacity: 1; border-color: var(--c); background: var(--cs); }
+.legend code { background: var(--c); color: #FFFFFF; text-align: center; padding: 4px 6px; font-size: 14px; }
+.legend span { font-size: 15px; }
+.codebox { background: var(--code-bg); color: var(--code-fg); border-radius: 14px; overflow: hidden; }
+.codebox .cbar { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 10px; padding: 7px 14px; font-family: var(--font-code); font-size: 12px; color: var(--code-dim); border-bottom: 1px solid rgba(255,255,255,.08); }
+.codebox .cbar i { font-style: normal; color: var(--code-new); }
+.codebox pre { margin: 0; padding: 12px 16px; font-family: var(--font-code); font-size: 14px; line-height: 1.65; overflow-x: auto; }
+.codebox .ln { display: block; color: var(--code-dim); transition: color .3s, background .3s; border-radius: 4px; }
+.codebox .ln.lit { color: var(--code-new); background: rgba(255,200,87,.1); }
+.codebox .new { color: var(--code-new); font-weight: 600; }
+.codebox .old { color: var(--code-dim); }
+
+/* warm-up blanks */
+.sentence { font-family: var(--font-display); font-weight: 800; font-size: clamp(24px, 4vw, 38px); line-height: 1.5; margin: 6px 0 18px; }
+.blank { font: inherit; color: var(--muted); background: var(--t1-soft); border: 3px dashed var(--t1); border-radius: 14px; padding: 0 16px; min-width: 5.2em; cursor: pointer; vertical-align: baseline; }
+.blank.filled { color: var(--ink); border-style: solid; background: var(--paper); }
+.blank.right { border-color: var(--t4); background: var(--t4-soft); color: #11603A; cursor: default; }
+.bank { display: flex; flex-wrap: wrap; gap: 10px; }
+.chip { font-weight: 700; font-size: 18px; padding: 10px 18px; border-radius: 999px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; box-shadow: 0 3px 0 var(--ink); }
+.chip:hover:not(:disabled) { background: var(--t3-soft); }
+.chip:disabled { opacity: .3; cursor: default; box-shadow: none; }
+.grid-demo { margin-top: 18px; }
+.gd-wrap { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; }
+.gd { display: grid; grid-template-columns: repeat(4, 56px); grid-template-rows: repeat(3, 40px); border: 2px solid var(--ink); }
+.gd span { border: 1px solid #33464D; background: var(--paper); }
+.gd span.r { background: var(--t3-soft); }
+.gd span.c { background: var(--t1-soft); }
+.gd span.r.c { background: var(--t4); }
+.gd-keys { display: grid; gap: 6px; font-weight: 700; }
+.gd-keys .kr { color: #7A4E05; } .gd-keys .kc { color: var(--t1); } .gd-keys .kx { color: var(--t4); }
+@media (prefers-reduced-motion: no-preference) {
+  .gd span { animation: cellIn .4s backwards; }
+  .gd span:nth-child(n+5) { animation-delay: .15s; } .gd span:nth-child(n+9) { animation-delay: .3s; }
+  @keyframes cellIn { from { opacity: 0; transform: scale(.6); } }
+}
+
+/* hunt */
+.challenge { display: flex; align-items: center; gap: 14px; background: var(--night); color: #FFFFFF; border-radius: 16px; padding: 14px 18px; }
+.challenge .q { font-family: var(--font-display); font-weight: 800; font-size: clamp(18px, 2.4vw, 24px); line-height: 1.2; }
+.challenge .q code { background: var(--sun); color: var(--night); }
+.challenge .n { flex: none; font-family: var(--font-code); font-size: 13px; background: rgba(255,255,255,.15); padding: 4px 10px; border-radius: 999px; }
+.hunt-target { cursor: pointer; }
+.hunt-target:hover { box-shadow: inset 0 0 0 3px var(--sun); }
+.flash-good { animation: fg .7s; }
+.flash-bad { animation: fb .5s; }
+@keyframes fg { 0%, 100% { background: inherit; } 40% { background: var(--t4-soft); box-shadow: inset 0 0 0 4px var(--t4); } }
+@keyframes fb { 0%, 100% { transform: none; } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+/* ---------- main tasks ---------- */
+.routine { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.routine div { background: var(--paper); border: 2px solid var(--line); border-radius: 16px; padding: 10px 14px; display: flex; gap: 12px; align-items: center; min-width: 0; }
+.routine .n { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-display); font-weight: 800; color: #FFFFFF; }
+.routine b { display: block; font-size: 15px; }
+.routine .s { font-size: 13.5px; color: var(--muted); }
+@media (max-width: 760px) { .routine { grid-template-columns: minmax(0, 1fr); } }
+.levels { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.levels div { border-radius: 14px; border: 2px solid var(--line); background: var(--paper); padding: 8px 10px; display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 14px; min-width: 0; }
+.levels .dot { flex: none; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; color: #FFFFFF; font-family: var(--font-display); background: var(--line); }
+.levels div.cur { border-color: var(--c); box-shadow: 0 0 0 3px var(--cs); }
+.levels div.cur .dot, .levels div.ok .dot { background: var(--c); }
+.levels div.ok { background: var(--cs); border-color: var(--c); }
+.levels div.lock { opacity: .5; }
+@media (max-width: 640px) { .levels { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.task-body p { margin: 0; max-width: 62ch; }
+.task-body ul { margin: 8px 0 0; padding-left: 20px; }
+details.hint { margin-top: 14px; border-radius: 14px; background: var(--tc-soft); padding: 10px 14px; }
+details.hint summary { cursor: pointer; font-weight: 700; list-style: none; display: flex; gap: 8px; align-items: center; }
+details.hint summary::-webkit-details-marker { display: none; }
+details.hint summary::before { content: "+"; width: 22px; height: 22px; border-radius: 50%; background: var(--tc); color: #FFFFFF; display: grid; place-items: center; font-weight: 800; flex: none; }
+details.hint[open] summary::before { content: "–"; }
+details.hint .codebox { margin-top: 10px; }
+.checklist { display: grid; gap: 8px; }
+.checklist label { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; padding: 10px 12px; border-radius: 12px; border: 2px solid var(--line); }
+.checklist input { appearance: none; -webkit-appearance: none; flex: none; width: 26px; height: 26px; border-radius: 8px; border: 2.5px solid var(--tc); background: var(--paper); display: grid; place-items: center; margin: 0; cursor: pointer; }
+.checklist input::after { content: ""; width: 7px; height: 13px; border: solid #FFFFFF; border-width: 0 3px 3px 0; transform: rotate(45deg) scale(0); margin-top: -3px; transition: transform .15s; }
+.checklist input:checked { background: var(--tc); }
+.checklist input:checked::after { transform: rotate(45deg) scale(1); }
+.checklist label:has(input:checked) { background: var(--tc-soft); border-color: var(--tc); }
+.mcq { display: grid; gap: 8px; }
+.mcq button { text-align: left; border: 2px solid var(--line); background: var(--paper); border-radius: 12px; padding: 12px 14px; cursor: pointer; font-size: 16px; color: var(--ink); display: flex; gap: 12px; align-items: center; }
+.mcq button:hover:not(:disabled) { border-color: var(--tc); background: var(--tc-soft); }
+.mcq button .k { flex: none; width: 28px; height: 28px; border-radius: 8px; background: var(--tc-soft); display: grid; place-items: center; font-weight: 800; font-family: var(--font-display); }
+.mcq button.right { border-color: var(--t4); background: var(--t4-soft); }
+.mcq button.wrong { border-color: var(--t2); background: var(--t2-soft); }
+.mcq button:disabled { cursor: default; }
+.device { background: var(--night); border-radius: 22px; padding: 10px; }
+.device .label { color: #FFFFFF; padding: 6px 8px 10px; font-weight: 700; display: flex; gap: 10px; align-items: center; }
+.device .label .pill { font-family: var(--font-code); font-size: 12px; background: var(--sun); color: var(--night); padding: 2px 8px; border-radius: 6px; }
+.screen { border-radius: 14px; overflow: hidden; background: #FFFFFF; }
+.chrome { background: #E4ECEA; padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
+.dots { display: flex; gap: 6px; }
+.dots i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+.dots i:nth-child(1) { background: #EE6A5F; } .dots i:nth-child(2) { background: #F5BE4F; } .dots i:nth-child(3) { background: #62C554; }
+.url { flex: 1; min-width: 0; background: #FFFFFF; border-radius: 999px; padding: 4px 14px; font-family: var(--font-code); font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.device iframe { display: block; width: 100%; height: 340px; border: 0; background: #FFFFFF; }
+.device .tip { color: #CFE6E6; font-size: 14px; padding: 10px 8px 4px; }
+.device .tip b { color: var(--sun); }
+
+/* ---------- plenary ---------- */
+.qprog { display: flex; gap: 6px; }
+.qprog i { flex: 1; height: 8px; border-radius: 99px; background: var(--line); }
+.qprog i.ok { background: var(--t4); } .qprog i.no { background: var(--t2); } .qprog i.cur { background: var(--sun); }
+textarea { font: inherit; font-size: 16px; width: 100%; min-height: 80px; border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; resize: vertical; background: var(--paper); color: var(--ink); }
+
+/* ---------- results ---------- */
+.result { background: linear-gradient(160deg, var(--night), var(--dusk)); color: #FFFFFF; border-radius: 26px; padding: 28px 26px; display: grid; gap: 14px; position: relative; overflow: hidden; }
+.result .ring { width: 104px; height: 104px; border-radius: 50%; background: var(--sun); display: grid; place-items: center; box-shadow: 0 0 0 9px rgba(245,166,35,.25); color: var(--night); font-family: var(--font-display); font-weight: 800; font-size: 34px; }
+.result h2 { font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 46px); margin: 0; line-height: 1; }
+.result p { margin: 0; color: #CFE6E6; }
+.breakdown { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.breakdown div { background: rgba(255,255,255,.1); border-radius: 14px; padding: 10px 14px; }
+.breakdown small { display: block; color: #9FC3C6; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.breakdown b { font-family: var(--font-display); font-size: 28px; font-variant-numeric: tabular-nums; }
+.breakdown span { color: #9FC3C6; }
+@media (max-width: 520px) { .breakdown { grid-template-columns: minmax(0, 1fr); } }
+.sync { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,.12); }
+.sync i { width: 10px; height: 10px; border-radius: 50%; background: var(--sun); display: block; }
+.sync.ok i { background: #62C554; } .sync.off i { background: #9FC3C6; }
+table.board { width: 100%; border-collapse: collapse; font-size: 15px; }
+table.board th, table.board td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+table.board th { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+table.board td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+table.board tr.me td { background: var(--t3-soft); }
+.levels-key { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.levels-key div { border: 2px solid var(--line); border-radius: 12px; padding: 8px 10px; font-size: 14px; }
+.levels-key div.me { border-color: var(--sun); background: var(--t3-soft); }
+.levels-key b { display: block; }
+@media (max-width: 640px) { .levels-key { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.confirm { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; background: var(--t2-soft); border: 2px solid var(--t2); border-radius: 16px; padding: 12px 16px; }
+.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: #FFFFFF; padding: 12px 20px; border-radius: 999px; font-weight: 700; box-shadow: 0 8px 24px rgba(0,0,0,.25); z-index: 40; }
+.toast b { color: var(--sun); }
+canvas#confetti { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 50; }
+.foot { font-size: 13px; color: var(--muted); text-align: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .pop { animation: pop .4s cubic-bezier(.2,.9,.3,1.3); }
+  @keyframes pop { from { transform: translateY(8px) scale(.98); opacity: .6; } to { transform: none; opacity: 1; } }
+  .fly { animation: fly 1s ease-out forwards; }
+  @keyframes fly { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-34px); opacity: 0; } }
+  .btn.primary.ready { animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge { 0%, 100% { box-shadow: 0 4px 0 rgba(16,34,41,.25), 0 0 0 0 var(--tc-soft); } 50% { box-shadow: 0 4px 0 rgba(16,34,41,.25), 0 0 0 8px var(--tc-soft); } }
+}
+@media (prefers-reduced-motion: reduce) { .fly { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="bar" id="bar" hidden>
+  <div class="bar-in">
+    <div class="logo">Table Quest <span>&lt;table&gt;</span></div>
+    <div class="who" id="who"></div>
+    <div class="stages" id="stages"></div>
+    <div class="points" id="points"><span class="coin">★</span><b id="pts">0</b><small>/ 200</small></div>
+  </div>
+</div>
+
+<main class="wrap" id="app"></main>
+<div class="toast" id="toast" hidden></div>
+<canvas id="confetti" hidden></canvas>
+
+<script>
+(function () {
+  "use strict";
+  /* ================= data ================= */
+  var MAX = { starter: 60, main: 100, plenary: 40 };
+  var LEVELS = [
+    { min: 0, name: "Table Explorer" }, { min: 80, name: "Table Builder" },
+    { min: 140, name: "Table Expert" }, { min: 180, name: "Table Master" }
+  ];
+  var DATA = [["Abu Dhabi", "Sheikh Zayed Grand Mosque"], ["Dubai", "Burj Khalifa"], ["Sharjah", "Al Noor Island"], ["Ras Al Khaimah", "Jebel Jais"]];
+  var TC = [["--t1", "--t1-soft"], ["--t2", "--t2-soft"], ["--t3", "--t3-soft"], ["--t4", "--t4-soft"]];
+
+  var HUNT = [
+    { q: 'Click the <code>&lt;caption&gt;</code> – the title of the table.', part: "caption", why: "The caption is the title that sits above the table." },
+    { q: 'Click a header cell <code>&lt;th&gt;</code>.', part: "th", why: "Header cells are bold and centred – they are in the top row." },
+    { q: 'Click a data cell <code>&lt;td&gt;</code>.', part: "td", why: "Data cells hold the normal information, like Dubai or Burj Khalifa." },
+    { q: 'Click a row tab <code>&lt;tr&gt;</code> – a whole row.', part: "tr", why: "Each orange tab on the left marks one table row." },
+    { q: 'Which tag wraps around everything? Click the table\'s outer frame <code>&lt;table&gt;</code>.', part: "table", why: "The dashed frame around everything is the <table> tag." }
+  ];
+
+  var TASKS = [
+    { name: "Make the table", title: "Create the table and its caption",
+      body: '<p>Below the heading in your starter file, start a table with a border so you can see the grid lines. Give it a title using <code>&lt;caption&gt;</code>.</p>',
+      checks: ['I typed <code>&lt;table border="1"&gt;</code> and closed it with <code>&lt;/table&gt;</code>.', 'My caption says <strong>Emirates of the UAE</strong>.', 'I saved in Notepad, refreshed Chrome and I can see the caption.'],
+      note: "An empty table has no cells yet, so you only see the caption. That is correct!",
+      q: "Which tag gives the table its title?", opts: ["<caption>", "<title>", "<th>"], a: 0 },
+    { name: "Header row", title: "Add the header row",
+      body: '<p>Inside the table, after the caption, add one row of <strong>header cells</strong>. Use <code>&lt;tr&gt;</code> for the row and <code>&lt;th&gt;</code> for each cell: <strong>Emirate</strong> and <strong>Famous Landmark</strong>.</p>',
+      checks: ['My row starts with <code>&lt;tr&gt;</code> and ends with <code>&lt;/tr&gt;</code>.', 'I have two <code>&lt;th&gt;</code> cells: Emirate and Famous Landmark.', 'In Chrome the two headings are bold and inside boxes.'],
+      note: "Two bold, centred headings, each inside its own box.",
+      q: "Which tag makes a header cell?", opts: ["<th>", "<td>", "<tr>"], a: 0 },
+    { name: "Data rows", title: "Add four data rows",
+      body: '<p>Below the header row, add <strong>four rows</strong>, one for each Emirate. Use <code>&lt;td&gt;</code> for data cells. Each row has two cells.</p>',
+      checks: ['I added four rows, each with <code>&lt;tr&gt;</code> … <code>&lt;/tr&gt;</code>.', 'Every <code>&lt;td&gt;</code> has a closing <code>&lt;/td&gt;</code>.', 'All four Emirates and landmarks show in Chrome.'],
+      note: "Data cells are normal text, lined up on the left.",
+      q: "4 rows with 2 cells each – how many <td> cells did you type?", opts: ["4", "6", "8"], a: 2 },
+    { name: "Format it", title: "Add space and colour",
+      body: '<p>Make your table easier to read:</p><ul><li>Add <code>cellpadding="8"</code> to the <code>&lt;table&gt;</code> tag.</li><li>Add <code>bgcolor="lightgreen"</code> to the header row\'s <code>&lt;tr&gt;</code> tag.</li></ul>',
+      checks: ['My <code>&lt;table&gt;</code> tag has <code>cellpadding="8"</code>.', 'My header row <code>&lt;tr&gt;</code> has <code>bgcolor="lightgreen"</code>.', 'In Chrome the cells are bigger and the header row is light green.'],
+      note: "Bigger cells (cellpadding) and a light-green header row.",
+      q: "What does cellpadding do?", opts: ["Adds space inside each cell", "Adds space between the cells", "Changes the colour of the cells"], a: 0 }
+  ];
+
+  var QUIZ = [
+    { q: "Which tag creates a new row in a table?", opts: ["<td>", "<tr>", "<th>", "<table>"], a: 1 },
+    { q: "Which attribute adds space inside a cell?", opts: ["border", "bgcolor", "cellpadding", "caption"], a: 2 }
+  ];
+  var QPTS = 20;
+  var BANK = ["rows", "pictures", "columns", "buttons", "colours", "links"];
+
+  /* ================= state ================= */
+  var KEY = "tableQuest_v2";
+  function fresh() {
+    return { sid: "", name: "", cls: "", division: "", stage: "login", started: "",
+      starter: { phase: "blank", idx: 0, tries: 0, score: 0, bTries: 0, bDone: false, picks: ["", ""], bLog: [] },
+      main: { task: 0, ticks: {}, qDone: [false, false, false, false], qTries: [0, 0, 0, 0], score: [0, 0, 0, 0], checked: [false, false, false, false] },
+      plenary: { idx: 0, tries: 0, score: 0, marks: [], chosen: [], done: false },
+      sync: "none" };
+  }
+  var S = fresh();
+  try { var saved = JSON.parse(localStorage.getItem(KEY) || "null"); if (saved && saved.sid) S = Object.assign(fresh(), saved); } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var app = $("app");
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var esc = function (s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;"); };
+  function sum(a) { return a.reduce(function (x, y) { return x + y; }, 0); }
+  function scores() {
+    var st = S.starter.score, mn = sum(S.main.score), pl = S.plenary.score;
+    return { starter: st, main: mn, plenary: pl, total: st + mn + pl };
+  }
+  function levelFor(t) { var l = LEVELS[0]; LEVELS.forEach(function (x) { if (t >= x.min) l = x; }); return l; }
+  function theme(i) { var c = TC[i % 4]; document.documentElement.style.setProperty("--tc", "var(" + c[0] + ")"); document.documentElement.style.setProperty("--tc-soft", "var(" + c[1] + ")"); }
+
+  /* fall back to defaults if the teacher setup block above has a typo */
+  if (typeof CLASSES === "undefined") window.CLASSES = ["6", "7", "8", "9", "10"];
+  if (typeof DIVISIONS === "undefined") window.DIVISIONS = "ABCDEFGHIJKLMNOPQ".split("");
+  if (typeof SHEET_URL === "undefined") window.SHEET_URL = "";
+
+  /* ================= spreadsheet ================= */
+  var URL_OK = typeof SHEET_URL === "string" && /^https:\/\/script\.google(usercontent)?\.com\//.test(SHEET_URL.trim());
+  var SHEET = URL_OK ? SHEET_URL.trim() : "";
+  function payload() {
+    var sc = scores();
+    return { sid: S.sid, name: S.name, cls: S.cls, division: S.division, stage: S.stage,
+      starter: sc.starter, main: sc.main, plenary: sc.plenary, total: sc.total, level: levelFor(sc.total).name,
+      mainTasks: S.main.score.join(" / "), quiz: S.plenary.marks.map(function (m) { return m ? "✓" : "✗"; }).join(" "),
+      warmup: (S.starter.bLog || []).join("  →  "), q1: (S.plenary.chosen || [])[0] || "", q2: (S.plenary.chosen || [])[1] || "",
+      started: S.started };
+  }
+  function sendToSheet() {
+    if (!SHEET) { S.sync = "off"; save(); renderSync(); return; }
+    S.sync = "sending"; renderSync();
+    try {
+      fetch(SHEET, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(payload()) })
+        .then(function () { S.sync = "ok"; save(); renderSync(); })
+        .catch(function () { S.sync = "fail"; save(); renderSync(); });
+    } catch (e) { S.sync = "fail"; save(); renderSync(); }
+  }
+  function renderSync() {
+    var el = $("syncState"); if (!el) return;
+    var map = { ok: ["ok", "Saved to the class spreadsheet"], sending: ["", "Saving…"], fail: ["", "Not saved – check the internet, then press Save again"], off: ["off", "Spreadsheet not connected (practice mode)"], none: ["", "Not saved yet"] };
+    var m = map[S.sync] || map.none;
+    el.className = "sync " + m[0]; el.innerHTML = "<i></i>" + m[1];
+    var b = $("retryBtn"); if (b) b.hidden = !(S.sync === "fail");
+  }
+
+  /* ================= points ================= */
+  function award(n, label) {
+    renderBar();
+    if (n <= 0) return;
+    var f = document.createElement("span"); f.className = "fly"; f.textContent = "+" + n;
+    $("points").appendChild(f); setTimeout(function () { f.remove(); }, 1000);
+    if (label) toast(label + " <b>+" + n + "</b>");
+  }
+  var tt;
+  function toast(h) { var t = $("toast"); t.innerHTML = h; t.hidden = false; clearTimeout(tt); tt = setTimeout(function () { t.hidden = true; }, 1800); }
+
+  function renderBar() {
+    var on = S.stage !== "login";
+    $("bar").hidden = !on; if (!on) return;
+    $("who").innerHTML = "<b>" + esc(S.name) + "</b> · Class " + esc(S.cls) + " – " + esc(S.division);
+    var order = ["starter", "main", "plenary", "done"], names = ["Starter", "Main", "Plenary", "Results"], cur = order.indexOf(S.stage);
+    $("stages").innerHTML = names.map(function (n, i) { return '<span class="' + (i < cur ? "done" : i === cur ? "on" : "") + '">' + n + "</span>"; }).join("");
+    $("pts").textContent = scores().total;
+  }
+
+  function go(stage) { S.stage = stage; save(); render(); window.scrollTo(0, 0); }
+  function render() {
+    renderBar();
+    ({ login: renderLogin, starter: renderStarter, main: renderMain, plenary: renderPlenary, done: renderDone })[S.stage]();
+  }
+
+  /* ================= login ================= */
+  var SKY = '<svg class="skyline" viewBox="0 0 1200 150" preserveAspectRatio="xMidYMax slice" aria-hidden="true"><circle cx="960" cy="70" r="34" fill="#F5A623" opacity=".9"/><path d="M0 150 L0 104 L90 70 L150 88 L230 52 L300 84 L360 74 L420 98 L420 150 Z" fill="#0F4A57"/><g fill="#0A3440"><rect x="470" y="96" width="26" height="54"/><rect x="500" y="84" width="20" height="66"/><rect x="524" y="104" width="30" height="46"/><path d="M600 150 V118 H612 V96 H620 V70 H626 V38 H630 V6 H632 V38 H636 V70 H642 V96 H650 V118 H662 V150 Z"/><rect x="676" y="92" width="22" height="58"/><rect x="702" y="106" width="34" height="44"/><rect x="740" y="88" width="18" height="62"/><rect x="806" y="60" width="5" height="90"/><rect x="926" y="60" width="5" height="90"/><path d="M818 150 V112 H920 V150 Z"/><path d="M838 112 a31 31 0 0 1 62 0 Z"/><path d="M822 116 a12 12 0 0 1 24 0 Z"/><path d="M892 116 a12 12 0 0 1 24 0 Z"/><path d="M1010 150 V112 H1020 V104 H1032 V112 H1060 V104 H1072 V112 H1082 V150 Z"/></g><path d="M0 150 C120 128 240 126 380 138 C520 150 640 124 800 132 C960 140 1080 122 1200 130 L1200 150 Z" fill="#E5BD7A"/><path d="M0 150 C160 140 320 146 480 142 C700 136 900 148 1200 142 L1200 150 Z" fill="#F4DFB4"/></svg>';
+  function renderLogin() {
+    theme(0);
+    app.innerHTML =
+      '<header class="hero"><div class="eyebrow">Grade VIII · Work Education · Creating Tables in HTML</div>' +
+      '<h1>Table Quest <span>&lt;table&gt;</span></h1><p>Learn the four table tags, build a real UAE table in Notepad, and win up to <b>200 points</b>.</p>' + SKY + '</header>' +
+      '<div class="login pop" id="loginForm"><h2>Enter the quest</h2>' +
+      '<div class="field"><label for="nm">Your full name</label><input id="nm" autocomplete="off" placeholder="e.g. Aisha Rahman" maxlength="40"></div>' +
+      '<div class="pair"><div class="field"><label for="cl">Class</label><select id="cl"><option value="">Choose…</option>' +
+      CLASSES.map(function (c) { return '<option' + (c === "8" ? " selected" : "") + '>' + esc(c) + '</option>'; }).join("") + '</select></div>' +
+      '<div class="field"><label for="dv">Division</label><select id="dv"><option value="">Choose…</option>' +
+      DIVISIONS.map(function (d) { return '<option>' + esc(d) + '</option>'; }).join("") + '</select></div></div>' +
+      '<div class="map">' +
+      '<div style="background:var(--t1-soft)"><b>1 · Starter</b>Warm-up + Tag Hunt · 60 pts</div>' +
+      '<div style="background:var(--t2-soft)"><b>2 · Main</b>4 Notepad levels · 100 pts</div>' +
+      '<div style="background:var(--t4-soft)"><b>3 · Plenary</b>2 questions · 40 pts</div></div>' +
+      '<div id="loginMsg"></div><button class="btn primary" type="button" id="startBtn">Start the quest →</button>' +
+      '<p class="note" style="margin:0">' + (SHEET ? '<span style="color:var(--t4);font-weight:700">● Spreadsheet link added – scores will be saved</span>' : (typeof SHEET_URL === "string" && SHEET_URL.trim() ? '<span style="color:var(--t2);font-weight:700">● The spreadsheet link looks wrong – it should start with https://script.google.com/</span>' : (typeof SETUP_OK === "undefined" ? '<span style="color:var(--t2);font-weight:700">● The SHEET_URL line has a typo. Use straight quotes: var SHEET_URL = "https://…";</span>' : '● Practice mode – scores are not saved to a spreadsheet'))) + '</p></div>' +
+      '<p class="foot">Sharjah Indian School, Juwaiza · Department of Computer Science</p>';
+    var start = function () {
+      var n = $("nm").value.trim().replace(/\s+/g, " "), c = $("cl").value, d = $("dv").value;
+      var miss = [];
+      if (n.length < 2) miss.push("your name");
+      if (!c) miss.push("your class");
+      if (!d) miss.push("your division");
+      if (miss.length) { $("loginMsg").innerHTML = '<div class="msg bad">Please fill in ' + miss.join(", ").replace(/, ([^,]*)$/, " and $1") + ' to start.</div>'; return; }
+      S.sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      S.name = n; S.cls = c; S.division = d; S.started = new Date().toISOString();
+      go("starter"); sendToSheet();
+    };
+    $("startBtn").addEventListener("click", start);
+    $("nm").addEventListener("keydown", function (e) { if (e.key === "Enter") start(); });
+    $("nm").focus();
+  }
+
+  /* ================= starter ================= */
+  function demoTable(hunt) {
+    var rows = [["Emirate", "Famous Landmark"], ["Dubai", "Burj Khalifa"], ["Sharjah", "Al Noor Island"]];
+    var h = '<div class="frame" id="frame" data-part="table">' +
+      '<span class="tag-chip hide" id="chipTable" style="background:var(--t1);left:10px;top:-14px">&lt;table&gt;</span>' +
+      '<table class="demo" id="demoT"><caption id="dCap" data-part="caption">Emirates of the UAE</caption>';
+    rows.forEach(function (r, i) {
+      var tag = i === 0 ? "th" : "td";
+      h += '<tr data-row="' + i + '">' + r.map(function (c) { return "<" + tag + ' data-part="' + tag + '">' + c + "</" + tag + ">"; }).join("") + "</tr>";
+    });
+    h += "</table></div>";
+    return h;
+  }
+  function placeRowTabs() {
+    var frame = $("frame"); if (!frame) return;
+    frame.querySelectorAll(".rowtab").forEach(function (t) { t.remove(); });
+    var fr = frame.getBoundingClientRect();
+    frame.querySelectorAll("tr").forEach(function (tr, i) {
+      var r = tr.getBoundingClientRect();
+      var b = document.createElement("button"); b.type = "button"; b.className = "rowtab"; b.dataset.part = "tr"; b.textContent = "<tr>";
+      b.style.top = (r.top - fr.top + 2) + "px"; b.style.height = (r.height - 4) + "px";
+      b.setAttribute("aria-label", "Row " + (i + 1));
+      frame.appendChild(b);
+    });
+  }
+
+  var demoTimer = [];
+  var DEMO_STEPS = [
+    { tag: "table", lines: [0, 13], say: "<code>&lt;table&gt;</code> starts the table. Everything goes inside it." },
+    { tag: "caption", lines: [1], say: "<code>&lt;caption&gt;</code> gives the table a title." },
+    { tag: "tr", lines: [2, 5, 6, 9, 10, 13 - 1], say: "<code>&lt;tr&gt;</code> makes a table row. This table has 3 rows." },
+    { tag: "th", lines: [3, 4], say: "<code>&lt;th&gt;</code> makes a header cell – bold and centred." },
+    { tag: "td", lines: [7, 8, 11, 12], say: "<code>&lt;td&gt;</code> makes a data cell for normal information." }
+  ];
+  var DEMO_CODE = ['<table border="1">', '  <caption>Emirates of the UAE</caption>', '  <tr>', '    <th>Emirate</th>', '    <th>Famous Landmark</th>', '  </tr>', '  <tr>', '    <td>Dubai</td>', '    <td>Burj Khalifa</td>', '  </tr>', '  <tr>', '    <td>Sharjah</td>', '    <td>Al Noor Island</td>', '  </tr>', '</table>'];
+  DEMO_STEPS[0].lines = [0, 14]; DEMO_STEPS[2].lines = [2, 5, 6, 9, 10, 13];
+  var LEG = [["table", "--t1", "--t1-soft", "The whole table"], ["caption", "--t3", "--t3-soft", "The title"], ["tr", "--t3", "--t3-soft", "A table row"], ["th", "--t2", "--t2-soft", "A header cell"], ["td", "--t4", "--t4-soft", "A data cell"]];
+
+  function renderBlank() {
+    var st = S.starter;
+    app.innerHTML = '<div class="stage-head pop"><span class="big">1</span><div><div class="lbl">Starter · Warm-up · 10 points</div><h2>Fill in the blanks</h2><p>Tap a word to put it in the next blank. Tap a blank to empty it. Then press Check.</p></div></div>' +
+      '<div class="card"><p class="sentence" id="sent">A table is made of <button type="button" class="blank" data-b="0"></button> and <button type="button" class="blank" data-b="1"></button>.</p>' +
+      '<div class="bank" id="bank">' + BANK.map(function (w) { return '<button type="button" class="chip" data-w="' + w + '">' + w + "</button>"; }).join("") + "</div>" +
+      '<div id="bMsg"></div><div class="actions" id="bAct"><button class="btn primary" id="bCheck" type="button" disabled>Check</button></div>' +
+      '<div class="grid-demo" id="gridDemo" hidden></div></div>';
+    var blanks = document.querySelectorAll(".blank"), chips = document.querySelectorAll("#bank .chip");
+    var sync = function () {
+      blanks.forEach(function (bl, k) { bl.textContent = st.picks[k] || "______"; bl.classList.toggle("filled", !!st.picks[k]); });
+      chips.forEach(function (c) { c.disabled = st.bDone || st.picks.indexOf(c.dataset.w) > -1; });
+      $("bCheck").disabled = st.bDone || !st.picks[0] || !st.picks[1];
+    };
+    chips.forEach(function (c) { c.onclick = function () { var k = st.picks[0] ? (st.picks[1] ? -1 : 1) : 0; if (k < 0) return; st.picks[k] = c.dataset.w; save(); sync(); }; });
+    blanks.forEach(function (bl) { bl.onclick = function () { if (st.bDone) return; st.picks[+bl.dataset.b] = ""; save(); sync(); }; });
+    var done = function () {
+      blanks.forEach(function (bl) { bl.classList.add("right"); });
+      $("bMsg").innerHTML = '<div class="msg good">Correct! A table is made of <b>rows</b> (across) and <b>columns</b> (down). Each box where they meet is a <b>cell</b>.</div>';
+      var g = $("gridDemo"); g.hidden = false;
+      var h = '<div class="gd-wrap"><div class="gd">';
+      for (var r = 0; r < 3; r++) for (var c = 0; c < 4; c++) h += '<span class="' + (r === 1 ? "r " : "") + (c === 2 ? "c" : "") + '"></span>';
+      g.innerHTML = h + '</div><div class="gd-keys"><span class="kr">→ a row goes across</span><span class="kc">↓ a column goes down</span><span class="kx">■ a cell is one box</span></div></div>';
+      $("bAct").innerHTML = '<button class="btn primary ready" id="toWatch" type="button">Watch a table being built →</button>';
+      $("toWatch").onclick = function () { st.phase = "watch"; save(); renderStarter(); window.scrollTo(0, 0); };
+    };
+    $("bCheck").onclick = function () {
+      st.bLog = (st.bLog || []).concat(st.picks[0] + " and " + st.picks[1]);
+      var ok = st.picks.indexOf("rows") > -1 && st.picks.indexOf("columns") > -1;
+      if (ok) {
+        var pts = st.bTries === 0 ? 10 : st.bTries === 1 ? 5 : 0;
+        st.score += pts; st.bDone = true; save(); sync(); award(pts, "Great start!"); done(); sendToSheet();
+      } else {
+        st.bTries++;
+        $("sent").classList.remove("flash-bad"); void $("sent").offsetWidth; $("sent").classList.add("flash-bad");
+        if (st.bTries >= 2) { st.picks = ["rows", "columns"]; st.bDone = true; save(); sync(); $("bMsg").innerHTML = ""; done(); $("bMsg").insertAdjacentHTML("afterbegin", '<div class="msg info">The answer is rows and columns.</div>'); }
+        else { st.picks = ["", ""]; save(); sync(); $("bMsg").innerHTML = '<div class="msg bad">Not quite. Think about how a timetable is laid out. Try again for 5 points!</div>'; }
+      }
+    };
+    sync();
+    if (st.bDone) done();
+  }
+
+  function renderStarter() {
+    theme(0);
+    var st = S.starter;
+    if (st.phase === "blank") { renderBlank(); return; }
+    var head = '<div class="stage-head pop"><span class="big">1</span><div><div class="lbl">Starter · up to 60 points</div><h2>' +
+      (st.phase === "watch" ? "Watch a table being built" : "Tag Hunt") + '</h2><p>' +
+      (st.phase === "watch" ? "See which tag makes each part of a table. Then play the Tag Hunt." : "Click the right part of the table. 10 points for a first try, 5 for a second try.") + "</p></div></div>";
+    app.innerHTML = head +
+      '<div class="demo-stage"><div class="card"><div id="huntQ"></div>' + demoTable() + '<div id="huntMsg"></div></div>' +
+      '<div class="col" style="display:grid;gap:14px;min-width:0"><div class="card"><h3>What each tag does</h3><div class="legend" id="legend">' +
+      LEG.map(function (l) { return '<div data-leg="' + l[0] + '" style="--c:var(' + l[1] + ');--cs:var(' + l[2] + ')"><code>&lt;' + l[0] + '&gt;</code><span>' + l[3] + "</span></div>"; }).join("") +
+      '</div><p class="note" id="demoSay"></p></div>' +
+      '<div class="codebox"><div class="cbar"><span>The code behind it</span><span><i>yellow</i> = this step</span></div><pre id="demoCode">' +
+      DEMO_CODE.map(function (l, i) { return '<span class="ln" data-ln="' + i + '">' + esc(l) + "</span>"; }).join("") + "</pre></div></div></div>" +
+      '<div class="actions" id="starterActions"></div>';
+    requestAnimationFrame(function () {
+      placeRowTabs();
+      if (st.phase === "watch") playDemo(); else { showAll(); startHunt(); }
+    });
+  }
+
+  function clearDemo() { demoTimer.forEach(clearTimeout); demoTimer = []; }
+  function showAll() {
+    $("frame").classList.add("show"); $("chipTable").classList.remove("hide");
+    document.querySelectorAll("#legend div").forEach(function (d) { d.classList.add("lit"); });
+  }
+  function playDemo() {
+    clearDemo();
+    var frame = $("frame"), cap = $("dCap");
+    var ths = frame.querySelectorAll("th"), tds = frame.querySelectorAll("td"), tabs = frame.querySelectorAll(".rowtab");
+    frame.classList.remove("show"); $("chipTable").classList.add("hide");
+    [cap].concat([].slice.call(ths), [].slice.call(tds), [].slice.call(tabs)).forEach(function (e) { e.classList.add("hide"); e.classList.remove("glow-cap", "glow-th", "glow-td"); });
+    frame.querySelectorAll("tr").forEach(function (tr) { tr.style.visibility = "hidden"; });
+    document.querySelectorAll("#legend div").forEach(function (d) { d.classList.remove("lit"); });
+    $("starterActions").innerHTML = '<button class="btn ghost" id="replay" type="button">Replay</button><button class="btn primary" id="toHunt" type="button" disabled>Start the Tag Hunt →</button>';
+    $("replay").onclick = playDemo;
+    $("toHunt").onclick = function () { clearDemo(); S.starter.phase = "hunt"; save(); renderStarter(); };
+    var step = function (i) {
+      var s = DEMO_STEPS[i];
+      document.querySelectorAll("#demoCode .ln").forEach(function (l) { l.classList.toggle("lit", s.lines.indexOf(+l.dataset.ln) > -1); });
+      var lg = document.querySelector('#legend [data-leg="' + s.tag + '"]'); lg.classList.add("lit");
+      $("demoSay").innerHTML = s.say;
+      if (s.tag === "table") { frame.classList.add("show"); $("chipTable").classList.remove("hide"); }
+      if (s.tag === "caption") { cap.classList.remove("hide"); cap.classList.add("glow-cap"); }
+      if (s.tag === "tr") { frame.querySelectorAll("tr").forEach(function (tr) { tr.style.visibility = "visible"; }); tabs.forEach(function (t) { t.classList.remove("hide"); }); cap.classList.remove("glow-cap"); }
+      if (s.tag === "th") ths.forEach(function (c) { c.classList.remove("hide"); c.classList.add("glow-th"); });
+      if (s.tag === "td") { ths.forEach(function (c) { c.classList.remove("glow-th"); }); tds.forEach(function (c) { c.classList.remove("hide"); c.classList.add("glow-td"); }); }
+    };
+    var gap = reduce ? 300 : 2200;
+    DEMO_STEPS.forEach(function (_, i) { demoTimer.push(setTimeout(function () { step(i); }, 400 + i * gap)); });
+    demoTimer.push(setTimeout(function () {
+      tds.forEach(function (c) { c.classList.remove("glow-td"); });
+      document.querySelectorAll("#demoCode .ln").forEach(function (l) { l.classList.remove("lit"); });
+      $("demoSay").innerHTML = "That is a whole table: <code>&lt;table&gt;</code> → <code>&lt;tr&gt;</code> → <code>&lt;th&gt;</code> / <code>&lt;td&gt;</code>. Ready to hunt?";
+      var b = $("toHunt"); b.disabled = false; b.classList.add("ready");
+    }, 400 + DEMO_STEPS.length * gap));
+  }
+
+  function startHunt() {
+    var st = S.starter;
+    if (st.idx >= HUNT.length) { finishStarter(); return; }
+    var h = HUNT[st.idx];
+    $("huntQ").innerHTML = '<div class="challenge pop"><span class="n">' + (st.idx + 1) + " / " + HUNT.length + '</span><span class="q">' + h.q + "</span></div>";
+    $("demoSay").textContent = "";
+    var frame = $("frame");
+    frame.classList.add("target");
+    frame.querySelectorAll("[data-part]").forEach(function (el) { el.classList.add("hunt-target"); });
+    frame.onclick = function (e) {
+      var el = e.target.closest("[data-part]"); if (!el) return;
+      var part = el.dataset.part;
+      if (part === h.part) {
+        var pts = st.tries === 0 ? 10 : st.tries === 1 ? 5 : 0;
+        st.score += pts; st.idx++; st.tries = 0; save();
+        el.classList.remove("flash-good"); void el.offsetWidth; el.classList.add("flash-good");
+        $("huntMsg").innerHTML = '<div class="msg good">Correct! ' + esc(h.why) + "</div>";
+        award(pts, pts ? "Correct!" : "");
+        frame.onclick = null;
+        setTimeout(startHunt, reduce ? 300 : 1100);
+      } else {
+        st.tries++; save();
+        el.classList.remove("flash-bad"); void el.offsetWidth; el.classList.add("flash-bad");
+        if (st.tries >= 2) {
+          $("huntMsg").innerHTML = '<div class="msg info">Not quite. ' + esc(h.why) + " Click it to continue.</div>";
+          var lg = document.querySelector('#legend [data-leg="' + h.part + '"]'); if (lg) { lg.classList.remove("flash-good"); void lg.offsetWidth; lg.classList.add("flash-good"); }
+        } else {
+          $("huntMsg").innerHTML = '<div class="msg bad">That is a <code>&lt;' + part + '&gt;</code>. Try again for 5 points!</div>';
+        }
+      }
+    };
+    $("starterActions").innerHTML = '<button class="btn ghost" id="rewatch" type="button">Watch the demo again</button>';
+    $("rewatch").onclick = function () { frame.onclick = null; S.starter.phase = "watch"; save(); renderStarter(); };
+  }
+  function finishStarter() {
+    $("frame").onclick = null;
+    $("huntQ").innerHTML = '<div class="challenge pop"><span class="q">Starter complete! You scored ' + S.starter.score + " / 60.</span></div>";
+    $("huntMsg").innerHTML = "";
+    $("starterActions").innerHTML = '<button class="btn primary ready" id="toMain" type="button">Go to the Main Activity →</button>';
+    $("toMain").onclick = function () { go("main"); sendToSheet(); };
+  }
+
+  /* ================= main ================= */
+  function codeFor(n) {
+    var L = [];
+    L.push([n >= 3 ? '<table border="1" cellpadding="8">' : '<table border="1">', n === 0 || n === 3 ? "new" : "old"]);
+    L.push(["  <caption>Emirates of the UAE</caption>", n === 0 ? "new" : "old"]);
+    if (n >= 1) {
+      L.push([n >= 3 ? '  <tr bgcolor="lightgreen">' : "  <tr>", n === 1 || n === 3 ? "new" : "old"]);
+      L.push(["    <th>Emirate</th>", n === 1 ? "new" : "old"]); L.push(["    <th>Famous Landmark</th>", n === 1 ? "new" : "old"]); L.push(["  </tr>", n === 1 ? "new" : "old"]);
+    }
+    if (n >= 2) DATA.forEach(function (d) { var k = n === 2 ? "new" : "old"; L.push(["  <tr>", k]); L.push(["    <td>" + d[0] + "</td>", k]); L.push(["    <td>" + d[1] + "</td>", k]); L.push(["  </tr>", k]); });
+    L.push(["</table>", n === 0 ? "new" : "old"]);
+    return L;
+  }
+  function renderMain() {
+    var m = S.main, i = m.task, t = TASKS[i];
+    theme(i);
+    var lines = codeFor(i).map(function (l) { return '<span class="' + l[1] + '">' + esc(l[0]) + "</span>"; }).join("\n");
+    var levels = TASKS.map(function (tk, k) {
+      var cls = k < i ? "ok" : k === i ? "cur" : "lock";
+      return '<div class="' + cls + '" style="--c:var(' + TC[k][0] + ");--cs:var(" + TC[k][1] + ')"><span class="dot">' + (k < i ? "✓" : k + 1) + "</span>" + tk.name + "</div>";
+    }).join("");
+    app.innerHTML =
+      '<div class="stage-head pop"><span class="big">2</span><div><div class="lbl">Main activity · Level ' + (i + 1) + ' of 4 · 25 points</div><h2>' + t.title + "</h2><p>Type your code in Notepad. This page shows what to do and what your page should look like.</p></div></div>" +
+      '<div class="routine">' +
+      '<div><span class="n" style="background:var(--t1)">1</span><span><b>Type in Notepad</b><span class="s">Open <code>UAE_Emirates_Table_Starter.html</code></span></span></div>' +
+      '<div><span class="n" style="background:var(--t2)">2</span><span><b>Save</b><span class="s">Press <kbd>Ctrl</kbd> + <kbd>S</kbd></span></span></div>' +
+      '<div><span class="n" style="background:var(--t4)">3</span><span><b>Refresh Chrome</b><span class="s">Press <kbd>F5</kbd> and compare</span></span></div></div>' +
+      '<div class="levels">' + levels + "</div>" +
+      '<div class="grid2"><div style="display:grid;gap:16px;min-width:0">' +
+      '<div class="card task-body">' + t.body + '<details class="hint"><summary>Stuck? Show the code</summary><div class="codebox"><div class="cbar"><span>Notepad · your table so far</span><span><i>yellow</i> = type this now</span></div><pre>' + lines + "</pre></div></details></div>" +
+      '<div class="card"><h3>Check your work <small style="color:var(--muted);font-family:var(--font-body);font-weight:400">(25 pts)</small></h3><div class="checklist" id="cl">' +
+      t.checks.map(function (c, k) { var id = "c" + i + "_" + k; return '<label for="' + id + '"><input type="checkbox" id="' + id + '"' + (m.ticks[id] || m.checked[i] ? " checked" : "") + (m.checked[i] ? " disabled" : "") + "><span>" + c + "</span></label>"; }).join("") +
+      '</div><div class="actions"><button class="btn primary" id="clBtn" type="button">My page matches ✓</button></div></div>' +
+      '<div class="actions" id="mainActions"></div></div>' +
+      '<div class="device"><div class="label"><span class="pill">LEVEL ' + (i + 1) + '</span>Your page should look like this</div><div class="screen"><div class="chrome"><div class="dots"><i></i><i></i><i></i></div><div class="url">file:///Desktop/UAE_Emirates_Table_Starter.html</div></div><iframe id="pv" title="Expected output" sandbox=""></iframe></div><div class="tip"><b>Look for:</b> ' + esc(t.note) + "</div></div></div>";
+    $("pv").srcdoc = '<!doctype html><html><head><meta charset="utf-8"><style>body{font-family:"Times New Roman",serif;margin:16px;color:#000;background:#fff}</style></head><body><h2 align="center">Emirates of the UAE</h2>' + codeFor(i).map(function (l) { return l[0]; }).join("\n") + "</body></html>";
+    // checklist
+    var boxes = document.querySelectorAll("#cl input");
+    var upd = function () {
+      var all = [].every.call(boxes, function (b) { return b.checked; });
+      $("clBtn").disabled = !all || m.checked[i];
+      $("clBtn").classList.toggle("ready", all && !m.checked[i]);
+      $("clBtn").textContent = m.checked[i] ? "Level complete ✓ +25" : "My page matches ✓";
+    };
+    boxes.forEach(function (b) { b.addEventListener("change", function () { m.ticks[b.id] = b.checked; save(); upd(); }); });
+    $("clBtn").onclick = function () { m.checked[i] = true; m.score[i] = 25; save(); boxes.forEach(function (b) { b.disabled = true; }); upd(); award(25, "Level " + (i + 1) + " complete!"); nextBtn(); };
+    upd();
+    if (m.checked[i]) nextBtn();
+    function nextBtn() {
+      $("mainActions").innerHTML = '<button class="btn primary ready" id="nextLv" type="button">' + (i === 3 ? "Finish – go to the Plenary →" : "Next level →") + "</button>";
+      $("nextLv").onclick = function () {
+        if (i === 3) { go("plenary"); sendToSheet(); return; }
+        m.task = i + 1; save(); renderMain(); window.scrollTo(0, 0); sendToSheet();
+      };
+    }
+  }
+  /* ================= plenary ================= */
+  function renderPlenary() {
+    theme(3);
+    var p = S.plenary;
+    var prog = QUIZ.map(function (_, k) { return "<i class=\"" + (k < p.marks.length ? (p.marks[k] ? "ok" : "no") : k === p.idx ? "cur" : "") + "\"></i>"; }).join("");
+    var head = '<div class="stage-head pop"><span class="big">3</span><div><div class="lbl">Plenary · up to 40 points</div><h2>Final Challenge</h2><p>Two questions, one try each – 20 points for each correct answer.</p></div></div>';
+    if (p.idx < QUIZ.length) {
+      var q = QUIZ[p.idx];
+      app.innerHTML = head + '<div class="card"><div class="qprog">' + prog + '</div><p style="font-family:var(--font-display);font-weight:800;font-size:clamp(20px,3vw,26px);margin:16px 0 14px">' + (p.idx + 1) + ". " + esc(q.q) + '</p><div class="mcq" id="pq"></div><div id="pMsg"></div><div class="actions" id="pAct"></div></div>';
+      var btns;
+      $("pq").innerHTML = q.opts.map(function (o, k) { return '<button type="button" data-k="' + k + '"><span class="k">' + "ABCD"[k] + "</span><span>" + esc(o) + "</span></button>"; }).join("");
+      btns = document.querySelectorAll("#pq button");
+      btns.forEach(function (b) {
+        b.onclick = function () {
+          var k = +b.dataset.k, ok = k === q.a;
+          btns.forEach(function (x) { x.disabled = true; if (+x.dataset.k === q.a) x.classList.add("right"); });
+          if (!ok) b.classList.add("wrong");
+          p.marks.push(ok); p.chosen = (p.chosen || []).concat(q.opts[k]); if (ok) p.score += QPTS; p.idx++; save();
+          $("pMsg").innerHTML = ok ? '<div class="msg good">Correct!</div>' : '<div class="msg bad">The answer is ' + esc(q.opts[q.a]) + ".</div>";
+          if (ok) award(QPTS, "Correct!"); else renderBar();
+          $("pAct").innerHTML = '<button class="btn primary ready" id="pNext" type="button">' + (p.idx < QUIZ.length ? "Next question →" : "See my results →") + "</button>";
+          $("pNext").onclick = function () { if (p.idx < QUIZ.length) renderPlenary(); else { p.done = true; go("done"); sendToSheet(); } };
+        };
+      });
+    } else {
+      app.innerHTML = head + '<div class="card"><div class="qprog">' + prog + '</div><h3 style="margin-top:16px">Plenary score: ' + p.score + ' / 40</h3><div class="actions"><button class="btn primary ready" id="finish" type="button">See my results →</button></div></div>';
+      $("finish").onclick = function () { p.done = true; go("done"); sendToSheet(); };
+    }
+  }
+
+  /* ================= results ================= */
+  function renderDone() {
+    theme(2);
+    var sc = scores(), lv = levelFor(sc.total);
+    app.innerHTML =
+      '<section class="result pop"><div class="ring">' + sc.total + '</div><div class="eyebrow">Quest complete · Class ' + esc(S.cls) + ' – ' + esc(S.division) + "</div><h2>" + esc(S.name) + ", you are a " + lv.name + "!</h2>" +
+      "<p>You scored " + sc.total + " out of 200 points.</p>" +
+      '<div class="breakdown"><div><small>Starter</small><b>' + sc.starter + "</b> <span>/ 60</span></div><div><small>Main</small><b>" + sc.main + "</b> <span>/ 100</span></div><div><small>Plenary</small><b>" + sc.plenary + "</b> <span>/ 40</span></div></div>" +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center"><span class="sync" id="syncState"></span><button class="btn ghost" id="retryBtn" type="button" style="color:#FFFFFF;border-color:rgba(255,255,255,.4)" hidden>Save again</button></div></section>' +
+      '<div class="card"><h3>Levels</h3><div class="levels-key">' + LEVELS.map(function (l, k) { var hi = LEVELS[k + 1] ? LEVELS[k + 1].min - 1 : 200; return '<div class="' + (l === lv ? "me" : "") + '"><b>' + l.name + "</b>" + l.min + "–" + hi + " points</div>"; }).join("") + "</div></div>" +
+      '<div class="card" id="boardCard" hidden><h3>Class leaderboard · ' + esc(S.cls) + ' – ' + esc(S.division) + '</h3><div style="overflow-x:auto"><table class="board" id="board"></table></div><p class="note">Updates when classmates finish. Press Refresh to check.</p><div class="actions"><button class="btn ghost" id="refreshBoard" type="button">Refresh</button></div></div>' +
+      '<div class="card"><h3>Finished early?</h3><p style="margin:0">Swap computers with a partner and compare their Notepad table with yours. Help them find any missing closing tags. Then try Activity Sheet 3.</p>' +
+      '<div class="actions"><button class="btn ghost" id="newPlayer" type="button">Next student – start a new quest</button></div>' +
+      '<div class="confirm" id="confirmBox" hidden style="margin-top:12px"><span>This clears ' + esc(S.name) + "'s game on this computer. Their scores stay in the spreadsheet.</span><button class=\"btn\" id=\"yes\" type=\"button\">Yes, new student</button><button class=\"btn ghost\" id=\"no\" type=\"button\">Cancel</button></div></div>";
+    renderSync();
+    $("retryBtn").onclick = sendToSheet;
+    $("newPlayer").onclick = function () { $("confirmBox").hidden = false; };
+    $("no").onclick = function () { $("confirmBox").hidden = true; };
+    $("yes").onclick = function () { S = fresh(); save(); render(); };
+    $("refreshBoard").onclick = loadBoard;
+    if (SHEET) { $("boardCard").hidden = false; setTimeout(loadBoard, 2500); }
+    confetti();
+  }
+  function loadBoard() {
+    var t = $("board"); if (!t) return;
+    t.innerHTML = "<tr><td>Loading…</td></tr>";
+    fetch(SHEET + (SHEET.indexOf("?") > -1 ? "&" : "?") + "action=board&cls=" + encodeURIComponent(S.cls) + "&division=" + encodeURIComponent(S.division))
+      .then(function (r) { return r.json(); })
+      .then(function (rows) {
+        if (!rows || !rows.length) { t.innerHTML = "<tr><td>No scores yet.</td></tr>"; return; }
+        t.innerHTML = "<tr><th>#</th><th>Name</th><th style=\"text-align:right\">Points</th></tr>" + rows.slice(0, 10).map(function (r, k) {
+          var me = r.name === S.name;
+          return '<tr class="' + (me ? "me" : "") + '"><td>' + (k + 1) + "</td><td>" + esc(r.name) + '</td><td class="num">' + r.total + "</td></tr>";
+        }).join("");
+      })
+      .catch(function () { t.innerHTML = "<tr><td>The leaderboard could not load. Check the internet connection.</td></tr>"; });
+  }
+  function confetti() {
+    if (reduce) return;
+    var c = $("confetti"), ctx = c.getContext("2d"); c.hidden = false;
+    var W = c.width = innerWidth, H = c.height = innerHeight, cols = ["#138A9E", "#E2574C", "#D98A0B", "#1E9A5F", "#F5A623"];
+    var P = Array.from({ length: 150 }, function () { return { x: Math.random() * W, y: -20 - Math.random() * H * .5, vx: (Math.random() - .5) * 3, vy: 2 + Math.random() * 3.5, r: 4 + Math.random() * 5, a: Math.random() * 6, va: (Math.random() - .5) * .3, col: cols[(Math.random() * 5) | 0] }; });
+    var t0 = performance.now();
+    (function f(now) {
+      ctx.clearRect(0, 0, W, H);
+      P.forEach(function (p) { p.x += p.vx; p.y += p.vy; p.a += p.va; ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a); ctx.fillStyle = p.col; ctx.fillRect(-p.r, -p.r / 2, p.r * 2, p.r); ctx.restore(); });
+      if (now - t0 < 3200) requestAnimationFrame(f); else { ctx.clearRect(0, 0, W, H); c.hidden = true; }
+    })(t0);
+  }
+
+  window.addEventListener("resize", function () { if (S.stage === "starter") placeRowTabs(); });
+  render();
+})();
+</script>
+</body>
+</html>
